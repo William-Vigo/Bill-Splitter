@@ -2,7 +2,6 @@ package worker
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 
@@ -14,7 +13,7 @@ func WorkerHandler(w http.ResponseWriter, r *http.Request) error {
 	payload := calculate.Payload{}
 	json.Unmarshal(body, &payload)
 
-	fmt.Printf("%+v\n", payload)
+	calculate.Process(payload)
 
 	return nil
 }
