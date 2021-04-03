@@ -8,6 +8,7 @@ import (
 type Payload struct {
 	Group  []People      `json:"people"`
 	Shared []SharedItems `json:"sharedItems"`
+	Tip    float64       `json:"tipPercentage"`
 }
 
 type People struct {
@@ -81,5 +82,6 @@ func Process(data Payload) {
 	}
 
 	wg.Wait()
+	//TODO: calculate tax and tip then add to each person
 	fmt.Println(moneyOwed)
 }
