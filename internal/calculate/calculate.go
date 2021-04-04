@@ -83,7 +83,6 @@ func Process(data Payload) string {
 					}
 
 					moneyDue := utility.Round(total/float64(splitSize), 2)
-					//TODO round money to 2 decimal places
 
 					for _, people := range group.People {
 						lock.Lock()
