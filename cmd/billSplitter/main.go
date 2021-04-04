@@ -13,7 +13,7 @@ func main() {
 	routes.EndPoints(router)
 	srv := &http.Server{
 		Handler: router,
-		Addr:    "127.0.0.1:8080",
+		Addr:    "0.0.0.0:3000",
 	}
 
 	srv.ListenAndServe()
