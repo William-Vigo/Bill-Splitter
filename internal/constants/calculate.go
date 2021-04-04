@@ -1,5 +1,5 @@
 package constants
 
 const (
-	taxRate float64 = 0.0625
+	TaxRate float64 = 0.06625
 )

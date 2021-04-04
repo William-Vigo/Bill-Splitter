@@ -1,14 +1,19 @@
 package calculate
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/William-Vigo/Bill-Splitter/internal/constants"
+	"github.com/William-Vigo/Bill-Splitter/pkg/worker/utility"
 )
 
 type Payload struct {
-	Group  []People      `json:"people"`
-	Shared []SharedItems `json:"sharedItems"`
-	Tip    float64       `json:"tipPercentage"`
+	Group      []People      `json:"people"`
+	Shared     []SharedItems `json:"sharedItems"`
+	TipPercent float64       `json:"tipPercentage"`
 }
 
 type People struct {
@@ -28,9 +33,18 @@ type SharedItems struct {
 	Purchases []Items `json:"items"`
 }
 
-//TODO: calculate tax & tip
-func Process(data Payload) {
-	moneyOwed := make(map[string]float64)
+type Receipt struct {
+	Name    string  `json:"name"`
+	ItemSum float64 `json:"itemSum"`
+	Tax     float64 `json:"tax"`
+	Tip     float64 `json:"tip"`
+	Total   float64 `json:"total`
+}
+
+type CustomMap map[string]Receipt
+
+func Process(data Payload) string {
+	moneyOwed := make(CustomMap)
 
 	var wg sync.WaitGroup
 	var lock sync.RWMutex
@@ -44,7 +58,9 @@ func Process(data Payload) {
 				defer wg.Done()
 				for _, purchases := range person.Purchases {
 					lock.Lock()
-					moneyOwed[person.Name] += purchases.Price
+					receipt := moneyOwed[person.Name]
+					receipt.ItemSum += purchases.Price
+					moneyOwed[person.Name] = receipt
 					lock.Unlock()
 				}
 			}(person)
@@ -62,16 +78,18 @@ func Process(data Payload) {
 
 					splitSize := len(group.People)
 					total := 0.00
-					for _, purchaces := range group.Purchases {
-						total += purchaces.Price
+					for _, purchases := range group.Purchases {
+						total += purchases.Price
 					}
 
-					moneyDue := total / float64(splitSize)
+					moneyDue := utility.Round(total/float64(splitSize), 2)
 					//TODO round money to 2 decimal places
 
 					for _, people := range group.People {
 						lock.Lock()
-						moneyOwed[people.Name] += moneyDue
+						receipt := moneyOwed[people.Name]
+						receipt.ItemSum += moneyDue
+						moneyOwed[people.Name] = receipt
 						lock.Unlock()
 					}
 
@@ -82,6 +100,44 @@ func Process(data Payload) {
 	}
 
 	wg.Wait()
-	//TODO: calculate tax and tip then add to each person
-	fmt.Println(moneyOwed)
+
+	for key, val := range moneyOwed {
+
+		// Tax calculate
+		tax := utility.Round(val.ItemSum*constants.TaxRate, 2)
+		tip := utility.Round(val.ItemSum*data.TipPercent, 2)
+
+		receipt := moneyOwed[key]
+		receipt.Name = key
+		receipt.Tax = tax
+		receipt.Tip = tip
+		receipt.Total = utility.Round(tax+tip+receipt.ItemSum, 2)
+		moneyOwed[key] = receipt
+
+	}
+
+	output, err := json.Marshal(moneyOwed)
+	if err != nil {
+		fmt.Printf("Error marshalling map: %v\n", err.Error())
+	}
+
+	return string(output)
+}
+
+func (mapping CustomMap) MarshalJSON() ([]byte, error) {
+	buffer := bytes.NewBufferString("{\"people\":[")
+	length := len(mapping)
+	count := 0
+	for _, val := range mapping {
+		jsonVal, _ := json.Marshal(val)
+
+		buffer.WriteString(string(jsonVal))
+		count++
+		if count < length {
+
+			buffer.WriteString(",")
+		}
+	}
+	buffer.WriteString("]}")
+	return buffer.Bytes(), nil
 }
