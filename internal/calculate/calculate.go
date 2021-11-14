@@ -121,7 +121,7 @@ func Process(data Payload) string {
 
 	}
 
-	output, err := json.Marshal(moneyOwed)
+	output, err := json.MarshalIndent(moneyOwed, "", "\t")
 	if err != nil {
 		fmt.Printf("Error marshalling map: %v\n", err.Error())
 	}

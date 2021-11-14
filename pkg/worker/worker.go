@@ -17,6 +17,8 @@ func WorkerHandler(w http.ResponseWriter, r *http.Request) error {
 	//TODO return err
 	output := calculate.Process(payload)
 
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, output)
 	return nil
 }
