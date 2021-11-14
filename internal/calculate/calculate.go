@@ -41,10 +41,16 @@ type Receipt struct {
 	Total   float64 `json:"total"`
 }
 
-type CustomMap map[string]Receipt
+type CustomMap struct {
+	Receipt   map[string]Receipt
+	BillTotal float64
+}
 
 func Process(data Payload) string {
-	moneyOwed := make(CustomMap)
+	moneyOwed := CustomMap{
+		Receipt:   make(map[string]Receipt),
+		BillTotal: 0.00,
+	}
 
 	var wg sync.WaitGroup
 	var lock sync.RWMutex
@@ -58,9 +64,9 @@ func Process(data Payload) string {
 				defer wg.Done()
 				for _, purchases := range person.Purchases {
 					lock.Lock()
-					receipt := moneyOwed[person.Name]
+					receipt := moneyOwed.Receipt[person.Name]
 					receipt.ItemSum = utility.Round(receipt.ItemSum+purchases.Price, 2)
-					moneyOwed[person.Name] = receipt
+					moneyOwed.Receipt[person.Name] = receipt
 					lock.Unlock()
 				}
 			}(person)
@@ -86,9 +92,9 @@ func Process(data Payload) string {
 
 					for _, people := range group.People {
 						lock.Lock()
-						receipt := moneyOwed[people.Name]
+						receipt := moneyOwed.Receipt[people.Name]
 						receipt.ItemSum = utility.Round(receipt.ItemSum+moneyDue, 2)
-						moneyOwed[people.Name] = receipt
+						moneyOwed.Receipt[people.Name] = receipt
 						lock.Unlock()
 					}
 
@@ -100,18 +106,18 @@ func Process(data Payload) string {
 
 	wg.Wait()
 
-	for key, val := range moneyOwed {
+	for key, val := range moneyOwed.Receipt {
 
 		// Tax calculate
 		tax := utility.Round(val.ItemSum*constants.TaxRate, 2)
 		tip := utility.Round(val.ItemSum*data.TipPercent, 2)
-
-		receipt := moneyOwed[key]
+		receipt := moneyOwed.Receipt[key]
 		receipt.Name = key
 		receipt.Tax = tax
 		receipt.Tip = tip
 		receipt.Total = utility.Round(tax+tip+receipt.ItemSum, 2)
-		moneyOwed[key] = receipt
+		moneyOwed.BillTotal = utility.Round(moneyOwed.BillTotal+receipt.Total, 2)
+		moneyOwed.Receipt[key] = receipt
 
 	}
 
@@ -125,9 +131,9 @@ func Process(data Payload) string {
 
 func (mapping CustomMap) MarshalJSON() ([]byte, error) {
 	buffer := bytes.NewBufferString("{\"people\":[")
-	length := len(mapping)
+	length := len(mapping.Receipt)
 	count := 0
-	for _, val := range mapping {
+	for _, val := range mapping.Receipt {
 		jsonVal, _ := json.Marshal(val)
 
 		buffer.WriteString(string(jsonVal))
@@ -137,6 +143,7 @@ func (mapping CustomMap) MarshalJSON() ([]byte, error) {
 			buffer.WriteString(",")
 		}
 	}
-	buffer.WriteString("]}")
+	buffer.WriteString("],")
+	buffer.WriteString(fmt.Sprintf("\"billTotal\": %.2f}", mapping.BillTotal))
 	return buffer.Bytes(), nil
 }
