@@ -38,7 +38,7 @@ type Receipt struct {
 	ItemSum float64 `json:"itemSum"`
 	Tax     float64 `json:"tax"`
 	Tip     float64 `json:"tip"`
-	Total   float64 `json:"total`
+	Total   float64 `json:"total"`
 }
 
 type CustomMap map[string]Receipt
@@ -59,7 +59,7 @@ func Process(data Payload) string {
 				for _, purchases := range person.Purchases {
 					lock.Lock()
 					receipt := moneyOwed[person.Name]
-					receipt.ItemSum += purchases.Price
+					receipt.ItemSum = utility.Round(receipt.ItemSum+purchases.Price, 2)
 					moneyOwed[person.Name] = receipt
 					lock.Unlock()
 				}
@@ -82,12 +82,12 @@ func Process(data Payload) string {
 						total += purchases.Price
 					}
 
-					moneyDue := utility.Round(total/float64(splitSize), 2)
+					moneyDue := utility.Round(total/(float64(splitSize)), 2)
 
 					for _, people := range group.People {
 						lock.Lock()
 						receipt := moneyOwed[people.Name]
-						receipt.ItemSum += moneyDue
+						receipt.ItemSum = utility.Round(receipt.ItemSum+moneyDue, 2)
 						moneyOwed[people.Name] = receipt
 						lock.Unlock()
 					}
