@@ -133,6 +133,9 @@ func (mapping CustomMap) MarshalJSON() ([]byte, error) {
 	buffer := bytes.NewBufferString("{\"people\":[")
 	length := len(mapping.Receipt)
 	count := 0
+	itemTotal := 0.0
+	taxTotal := 0.0
+	tipTotal := 0.0
 	for _, val := range mapping.Receipt {
 		jsonVal, _ := json.Marshal(val)
 
@@ -142,8 +145,14 @@ func (mapping CustomMap) MarshalJSON() ([]byte, error) {
 
 			buffer.WriteString(",")
 		}
+		taxTotal += val.Tax
+		tipTotal += val.Tip
+		itemTotal += val.ItemSum
 	}
 	buffer.WriteString("],")
+	buffer.WriteString(fmt.Sprintf("\"itemTotal\": %.2f,\n", itemTotal))
+	buffer.WriteString(fmt.Sprintf("\"taxTotal\": %.2f,\n", taxTotal))
+	buffer.WriteString(fmt.Sprintf("\"tipTotal\": %.2f,\n", tipTotal))
 	buffer.WriteString(fmt.Sprintf("\"billTotal\": %.2f}", mapping.BillTotal))
 	return buffer.Bytes(), nil
 }
