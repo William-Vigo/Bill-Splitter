@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/William-Vigo/Bill-Splitter/internal/constants"
 	"github.com/William-Vigo/Bill-Splitter/pkg/worker/utility"
 )
 
 type Payload struct {
-	Group      []People      `json:"people"`
-	Shared     []SharedItems `json:"sharedItems"`
-	TipPercent float64       `json:"tipPercentage"`
+	Group   []People      `json:"people"`
+	Shared  []SharedItems `json:"sharedItems"`
+	TipPaid float64       `json:"tipPaid"`
+	TaxPaid float64       `json:"taxPaid"`
 }
 
 type People struct {
@@ -105,12 +105,18 @@ func Process(data Payload) string {
 	}
 
 	wg.Wait()
-
+	total := 0.0
+	// calculate itemTotal
+	for _, val := range moneyOwed.Receipt {
+		total += val.ItemSum
+	}
+	calculatedTaxPercentage := data.TaxPaid / total
+	calculatedTipPercentage := data.TipPaid / total
 	for key, val := range moneyOwed.Receipt {
 
 		// Tax calculate
-		tax := utility.Round(val.ItemSum*constants.TaxRate, 2)
-		tip := utility.Round(val.ItemSum*data.TipPercent, 2)
+		tax := utility.Round(val.ItemSum*calculatedTaxPercentage, 2)
+		tip := utility.Round(val.ItemSum*calculatedTipPercentage, 2)
 		receipt := moneyOwed.Receipt[key]
 		receipt.Name = key
 		receipt.Tax = tax
