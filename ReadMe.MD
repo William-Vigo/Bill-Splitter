@@ -72,6 +72,7 @@ Instructions to run code
          ]
       }
    ],
-   "tipPercentage":0.2
+   "tipPaid": 0.0,
+   "taxPaid": 0.0,
 }
 ```
