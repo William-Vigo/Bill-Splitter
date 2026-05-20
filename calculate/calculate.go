@@ -135,6 +135,7 @@ func Process(data Payload) string {
 }
 
 func (mapping CustomMap) MarshalJSON() ([]byte, error) {
+	decimal.MarshalJSONWithoutQuotes = true
 	buffer := bytes.NewBufferString("{\"people\":[")
 	length := len(mapping.Receipt)
 	count := 0
