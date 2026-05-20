@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/William-Vigo/Bill-Splitter/routes"
@@ -13,8 +14,8 @@ func main() {
 	routes.EndPoints(router)
 	srv := &http.Server{
 		Handler: router,
-		Addr:    "127.0.0.1:8080",
+		Addr:    ":8080",
 	}
-
+	fmt.Println("Starting up bill-splitter server")
 	srv.ListenAndServe()
 }

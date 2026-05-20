@@ -1,0 +1,9 @@
+services:
+  bill-splitter:
+    image: golang:1.26
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: go run main.go
+    ports:
+      - "8080:8080"
