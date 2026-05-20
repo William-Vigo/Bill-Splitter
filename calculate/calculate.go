@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/William-Vigo/Bill-Splitter/utility"
+	"github.com/shopspring/decimal"
 )
 
 type Payload struct {
@@ -34,22 +34,22 @@ type SharedItems struct {
 }
 
 type Receipt struct {
-	Name    string  `json:"name"`
-	ItemSum float64 `json:"itemSum"`
-	Tax     float64 `json:"tax"`
-	Tip     float64 `json:"tip"`
-	Total   float64 `json:"total"`
+	Name    string          `json:"name"`
+	ItemSum decimal.Decimal `json:"itemSum"`
+	Tax     decimal.Decimal `json:"tax"`
+	Tip     decimal.Decimal `json:"tip"`
+	Total   decimal.Decimal `json:"total"`
 }
 
 type CustomMap struct {
 	Receipt   map[string]Receipt
-	BillTotal float64
+	BillTotal decimal.Decimal
 }
 
 func Process(data Payload) string {
 	moneyOwed := CustomMap{
 		Receipt:   make(map[string]Receipt),
-		BillTotal: 0.00,
+		BillTotal: decimal.NewFromFloat(0.0),
 	}
 
 	var wg sync.WaitGroup
@@ -65,7 +65,7 @@ func Process(data Payload) string {
 				for _, purchases := range person.Purchases {
 					lock.Lock()
 					receipt := moneyOwed.Receipt[person.Name]
-					receipt.ItemSum = utility.Round(receipt.ItemSum+purchases.Price, 2)
+					receipt.ItemSum = receipt.ItemSum.Add(decimal.NewFromFloat(purchases.Price))
 					moneyOwed.Receipt[person.Name] = receipt
 					lock.Unlock()
 				}
@@ -83,17 +83,16 @@ func Process(data Payload) string {
 					defer wg.Done()
 
 					splitSize := len(group.People)
-					total := 0.00
+					total := decimal.NewFromInt(0)
 					for _, purchases := range group.Purchases {
-						total += purchases.Price
+						total = total.Add(decimal.NewFromFloat(purchases.Price))
 					}
-
-					moneyDue := utility.Round(total/(float64(splitSize)), 2)
+					moneyDue := total.Div(decimal.NewFromInt(int64(splitSize)))
 
 					for _, people := range group.People {
 						lock.Lock()
 						receipt := moneyOwed.Receipt[people.Name]
-						receipt.ItemSum = utility.Round(receipt.ItemSum+moneyDue, 2)
+						receipt.ItemSum = receipt.ItemSum.Add(moneyDue)
 						moneyOwed.Receipt[people.Name] = receipt
 						lock.Unlock()
 					}
@@ -105,24 +104,24 @@ func Process(data Payload) string {
 	}
 
 	wg.Wait()
-	total := 0.0
+	total := decimal.NewFromFloat(0)
 	// calculate itemTotal
 	for _, val := range moneyOwed.Receipt {
-		total += val.ItemSum
+		total = total.Add(val.ItemSum)
 	}
-	calculatedTaxPercentage := data.TaxPaid / total
-	calculatedTipPercentage := data.TipPaid / total
+	calculatedTaxPercentage := decimal.NewFromFloat(data.TaxPaid).Div(total)
+	calculatedTipPercentage := decimal.NewFromFloat(data.TipPaid).Div(total)
 	for key, val := range moneyOwed.Receipt {
-
 		// Tax calculate
-		tax := utility.Round(val.ItemSum*calculatedTaxPercentage, 2)
-		tip := utility.Round(val.ItemSum*calculatedTipPercentage, 2)
+		tax := val.ItemSum.Mul(calculatedTaxPercentage)
+		tip := val.ItemSum.Mul(calculatedTipPercentage)
 		receipt := moneyOwed.Receipt[key]
 		receipt.Name = key
 		receipt.Tax = tax
 		receipt.Tip = tip
-		receipt.Total = utility.Round(tax+tip+receipt.ItemSum, 2)
-		moneyOwed.BillTotal = utility.Round(moneyOwed.BillTotal+receipt.Total, 2)
+		receipt.Total = tax.Add(tip).Add(receipt.ItemSum)
+		receipt.ItemSum = val.ItemSum
+		moneyOwed.BillTotal = moneyOwed.BillTotal.Add(receipt.Total)
 		moneyOwed.Receipt[key] = receipt
 
 	}
@@ -139,26 +138,35 @@ func (mapping CustomMap) MarshalJSON() ([]byte, error) {
 	buffer := bytes.NewBufferString("{\"people\":[")
 	length := len(mapping.Receipt)
 	count := 0
-	itemTotal := 0.0
-	taxTotal := 0.0
-	tipTotal := 0.0
+	itemTotal := decimal.NewFromInt(0)
+	taxTotal := decimal.NewFromInt(0)
+	tipTotal := decimal.NewFromInt(0)
 	for _, val := range mapping.Receipt {
-		jsonVal, _ := json.Marshal(val)
+		taxTotal = taxTotal.Add(val.Tax)
+		tipTotal = tipTotal.Add(val.Tip)
+		itemTotal = itemTotal.Add(val.ItemSum)
+	}
+	for _, val := range mapping.Receipt {
+		val.ItemSum = val.ItemSum.Round(2)
+		val.Tax = val.Tax.Round(2)
+		val.Tip = val.Tip.Round(2)
+		val.Total = val.Total.Round(2)
 
+		jsonVal, _ := json.Marshal(val)
 		buffer.WriteString(string(jsonVal))
 		count++
 		if count < length {
-
 			buffer.WriteString(",")
 		}
-		taxTotal += val.Tax
-		tipTotal += val.Tip
-		itemTotal += val.ItemSum
 	}
+	FinalItemTotal, _ := itemTotal.Round(2).Float64()
+	FinalTaxTotal, _ := taxTotal.Round(2).Float64()
+	FinalTipTotal, _ := tipTotal.Round(2).Float64()
+	FinalBillTotal, _ := mapping.BillTotal.Round(2).Float64()
 	buffer.WriteString("],")
-	buffer.WriteString(fmt.Sprintf("\"itemTotal\": %.2f,\n", itemTotal))
-	buffer.WriteString(fmt.Sprintf("\"taxTotal\": %.2f,\n", taxTotal))
-	buffer.WriteString(fmt.Sprintf("\"tipTotal\": %.2f,\n", tipTotal))
-	buffer.WriteString(fmt.Sprintf("\"billTotal\": %.2f}", mapping.BillTotal))
+	buffer.WriteString(fmt.Sprintf("\"itemTotal\": %.2f,\n", FinalItemTotal))
+	buffer.WriteString(fmt.Sprintf("\"taxTotal\": %.2f,\n", FinalTaxTotal))
+	buffer.WriteString(fmt.Sprintf("\"tipTotal\": %.2f,\n", FinalTipTotal))
+	buffer.WriteString(fmt.Sprintf("\"billTotal\": %.2f}", FinalBillTotal))
 	return buffer.Bytes(), nil
 }
