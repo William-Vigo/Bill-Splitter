@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"github.com/William-Vigo/Bill-Splitter/internal/calculate"
+	"github.com/William-Vigo/Bill-Splitter/calculate"
 )
 
 func WorkerHandler(w http.ResponseWriter, r *http.Request) error {

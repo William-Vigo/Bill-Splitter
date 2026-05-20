@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/William-Vigo/Bill-Splitter/pkg/worker/utility"
+	"github.com/William-Vigo/Bill-Splitter/utility"
 )
 
 type Payload struct {

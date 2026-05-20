@@ -3,7 +3,7 @@ package main
 import (
 	"net/http"
 
-	"github.com/William-Vigo/Bill-Splitter/internal/routes"
+	"github.com/William-Vigo/Bill-Splitter/routes"
 	"github.com/gorilla/mux"
 )
 
