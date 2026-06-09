@@ -9,18 +9,18 @@ import (
 )
 
 type Payload struct {
-	Group   []People      `json:"people"`
+	People  []People      `json:"people"`
 	Shared  []SharedItems `json:"sharedItems"`
 	TipPaid float64       `json:"tipPaid"`
 	TaxPaid float64       `json:"taxPaid"`
 }
 
 type People struct {
-	Name      string  `json:"name"`
-	Purchases []Items `json:"items"`
+	Name      string `json:"name"`
+	Purchases []Item `json:"items"`
 }
 
-type Items struct {
+type Item struct {
 	Name  string  `json:"itemName"`
 	Price float64 `json:"price"`
 }
@@ -29,79 +29,103 @@ type SharedItems struct {
 	People []struct {
 		Name string `json:"name"`
 	} `json:"people"`
-	Purchases []Items `json:"items"`
+	Purchases []Item `json:"items"`
 }
 
 type Receipt struct {
-	Name    string          `json:"name"`
-	ItemSum decimal.Decimal `json:"itemSum"`
-	Tax     decimal.Decimal `json:"tax"`
-	Tip     decimal.Decimal `json:"tip"`
-	Total   decimal.Decimal `json:"total"`
+	Name        string          `json:"name"`
+	Items       []Item          `json: "items"`
+	SharedItems []Item          `json: "sharedItems"`
+	ItemSum     decimal.Decimal `json:"itemSum"`
+	Tax         decimal.Decimal `json:"tax"`
+	Tip         decimal.Decimal `json:"tip"`
+	Total       decimal.Decimal `json:"total"`
 }
 
-type CustomMap struct {
+type Result struct {
 	Receipt   map[string]Receipt
 	BillTotal decimal.Decimal
+	Data      Payload
+
+	// Required so that items are calculated accordingly
+	taxPercentage decimal.Decimal
+	tipPercentage decimal.Decimal
 }
 
-func Process(data Payload) string {
-	moneyOwed := CustomMap{
-		Receipt:   make(map[string]Receipt),
-		BillTotal: decimal.NewFromFloat(0.0),
-	}
-
-	// this sums individuals total
-	for _, person := range data.Group {
-		for _, purchases := range person.Purchases {
-			receipt := moneyOwed.Receipt[person.Name]
-			receipt.ItemSum = receipt.ItemSum.Add(decimal.NewFromFloat(purchases.Price))
-			moneyOwed.Receipt[person.Name] = receipt
+func (r *Result) processIndividual() {
+	for _, person := range r.Data.People {
+		for _, item := range person.Purchases {
+			receipt := r.Receipt[person.Name]
+			receipt.ItemSum = receipt.ItemSum.Add(decimal.NewFromFloat(item.Price))
+			receipt.Items = append(receipt.Items, item)
+			r.Receipt[person.Name] = receipt
 		}
 	}
 
-	if len(data.Shared) != 0 {
-		for _, group := range data.Shared {
+}
+func (r *Result) processSplit() {
+	if len(r.Data.Shared) == 0 {
+		return
+	}
 
-			splitSize := len(group.People)
-			total := decimal.NewFromInt(0)
-			for _, purchases := range group.Purchases {
-				total = total.Add(decimal.NewFromFloat(purchases.Price))
-			}
-			moneyDue := total.Div(decimal.NewFromInt(int64(splitSize)))
-
+	for _, group := range r.Data.Shared {
+		for _, item := range group.Purchases {
+			val := decimal.NewFromFloat(item.Price).Div(decimal.NewFromInt(int64(len(group.People))))
 			for _, people := range group.People {
-				receipt := moneyOwed.Receipt[people.Name]
-				receipt.ItemSum = receipt.ItemSum.Add(moneyDue)
-				moneyOwed.Receipt[people.Name] = receipt
+				receipt := r.Receipt[people.Name]
+				receipt.SharedItems = append(receipt.SharedItems, Item{
+					Name:  item.Name,
+					Price: val.InexactFloat64(),
+				})
+				receipt.ItemSum = receipt.ItemSum.Add(val)
+				r.Receipt[people.Name] = receipt
 			}
-
 		}
-	}
 
+	}
+}
+func (r *Result) calculatePercentages() {
 	total := decimal.NewFromFloat(0)
 	// calculate itemTotal
-	for _, val := range moneyOwed.Receipt {
+	for _, val := range r.Receipt {
 		total = total.Add(val.ItemSum)
 	}
-	calculatedTaxPercentage := decimal.NewFromFloat(data.TaxPaid).Div(total)
-	calculatedTipPercentage := decimal.NewFromFloat(data.TipPaid).Div(total)
-	for key, val := range moneyOwed.Receipt {
-		// Tax calculate
-		tax := val.ItemSum.Mul(calculatedTaxPercentage)
-		tip := val.ItemSum.Mul(calculatedTipPercentage)
-		receipt := moneyOwed.Receipt[key]
+	r.taxPercentage = decimal.NewFromFloat(r.Data.TaxPaid).Div(total)
+	r.tipPercentage = decimal.NewFromFloat(r.Data.TipPaid).Div(total)
+}
+
+func (r *Result) postProcess() {
+	for key, val := range r.Receipt {
+		tax := val.ItemSum.Mul(r.taxPercentage)
+		tip := val.ItemSum.Mul(r.tipPercentage)
+
+		receipt := r.Receipt[key]
 		receipt.Name = key
 		receipt.Tax = tax
 		receipt.Tip = tip
 		receipt.Total = tax.Add(tip).Add(receipt.ItemSum)
 		receipt.ItemSum = val.ItemSum
-		moneyOwed.BillTotal = moneyOwed.BillTotal.Add(receipt.Total)
-		moneyOwed.Receipt[key] = receipt
+
+		r.BillTotal = r.BillTotal.Add(receipt.Total)
+		r.Receipt[key] = receipt
 
 	}
+}
 
-	output, err := json.MarshalIndent(moneyOwed, "", "\t")
+func (r *Result) Process() string {
+
+	r.Receipt = make(map[string]Receipt)
+	r.BillTotal = decimal.NewFromFloat(0.0)
+
+	// pre process
+	r.processIndividual()
+	r.processSplit()
+
+	// post process
+	r.calculatePercentages()
+	r.postProcess()
+
+	output, err := json.MarshalIndent(r, "", "\t")
 	if err != nil {
 		fmt.Printf("Error marshalling map: %v\n", err.Error())
 	}
@@ -109,7 +133,7 @@ func Process(data Payload) string {
 	return string(output)
 }
 
-func (mapping CustomMap) MarshalJSON() ([]byte, error) {
+func (mapping *Result) MarshalJSON() ([]byte, error) {
 	decimal.MarshalJSONWithoutQuotes = true
 	buffer := bytes.NewBufferString("{\"people\":[")
 	length := len(mapping.Receipt)

@@ -11,11 +11,14 @@ import (
 
 func WorkerHandler(w http.ResponseWriter, r *http.Request) error {
 	body, _ := ioutil.ReadAll(r.Body)
-	payload := calculate.Payload{}
+	var payload calculate.Payload
 	json.Unmarshal(body, &payload)
 
 	//TODO return err
-	output := calculate.Process(payload)
+	result := calculate.Result{
+		Data: payload,
+	}
+	output := result.Process()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
