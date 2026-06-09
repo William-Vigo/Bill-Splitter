@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"github.com/shopspring/decimal"
 )
@@ -52,58 +51,34 @@ func Process(data Payload) string {
 		BillTotal: decimal.NewFromFloat(0.0),
 	}
 
-	var wg sync.WaitGroup
-	var lock sync.RWMutex
 	// this sums individuals total
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for _, person := range data.Group {
-			wg.Add(1)
-			go func(person People) {
-				defer wg.Done()
-				for _, purchases := range person.Purchases {
-					lock.Lock()
-					receipt := moneyOwed.Receipt[person.Name]
-					receipt.ItemSum = receipt.ItemSum.Add(decimal.NewFromFloat(purchases.Price))
-					moneyOwed.Receipt[person.Name] = receipt
-					lock.Unlock()
-				}
-			}(person)
+	for _, person := range data.Group {
+		for _, purchases := range person.Purchases {
+			receipt := moneyOwed.Receipt[person.Name]
+			receipt.ItemSum = receipt.ItemSum.Add(decimal.NewFromFloat(purchases.Price))
+			moneyOwed.Receipt[person.Name] = receipt
 		}
-	}()
-
-	if len(data.Shared) != 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for _, group := range data.Shared {
-				wg.Add(1)
-				go func(group SharedItems) {
-					defer wg.Done()
-
-					splitSize := len(group.People)
-					total := decimal.NewFromInt(0)
-					for _, purchases := range group.Purchases {
-						total = total.Add(decimal.NewFromFloat(purchases.Price))
-					}
-					moneyDue := total.Div(decimal.NewFromInt(int64(splitSize)))
-
-					for _, people := range group.People {
-						lock.Lock()
-						receipt := moneyOwed.Receipt[people.Name]
-						receipt.ItemSum = receipt.ItemSum.Add(moneyDue)
-						moneyOwed.Receipt[people.Name] = receipt
-						lock.Unlock()
-					}
-
-				}(group)
-
-			}
-		}()
 	}
 
-	wg.Wait()
+	if len(data.Shared) != 0 {
+		for _, group := range data.Shared {
+
+			splitSize := len(group.People)
+			total := decimal.NewFromInt(0)
+			for _, purchases := range group.Purchases {
+				total = total.Add(decimal.NewFromFloat(purchases.Price))
+			}
+			moneyDue := total.Div(decimal.NewFromInt(int64(splitSize)))
+
+			for _, people := range group.People {
+				receipt := moneyOwed.Receipt[people.Name]
+				receipt.ItemSum = receipt.ItemSum.Add(moneyDue)
+				moneyOwed.Receipt[people.Name] = receipt
+			}
+
+		}
+	}
+
 	total := decimal.NewFromFloat(0)
 	// calculate itemTotal
 	for _, val := range moneyOwed.Receipt {
