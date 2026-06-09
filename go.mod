@@ -6,3 +6,5 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/shopspring/decimal v1.4.0
 )
+
+require github.com/Rhymond/go-money v1.0.15 // indirect
