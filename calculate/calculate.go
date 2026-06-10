@@ -5,14 +5,48 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/Rhymond/go-money"
 	"github.com/shopspring/decimal"
 )
+
+type currency int64
+
+func (c currency) Value() *money.Money {
+	fmt.Println(c)
+	return money.New(int64(c), money.USD)
+}
+
+func (c currency) Add(val currency) currency {
+	sum, err := c.Value().Add(val.Value())
+	if err != nil {
+		panic(err.Error())
+	}
+	return currency(sum.Amount())
+}
+
+func (c currency) Split(n int) []currency {
+	split, err := c.Value().Split(n)
+	if err != nil {
+		panic(err.Error())
+	}
+	s := []currency{}
+	for _, val := range split {
+		s = append(s, currency(val.Amount()))
+	}
+	return s
+}
+
+func (c currency) Mul(multiple decimal.Decimal) currency {
+	price := decimal.NewFromFloat(float64(c.Value().Amount()))
+	val := multiple.Mul(price).IntPart()
+	return currency(val)
+}
 
 type Payload struct {
 	People  []People      `json:"people"`
 	Shared  []SharedItems `json:"sharedItems"`
-	TipPaid float64       `json:"tipPaid"`
-	TaxPaid float64       `json:"taxPaid"`
+	TipPaid currency      `json:"tipPaid"`
+	TaxPaid currency      `json:"taxPaid"`
 }
 
 type People struct {
@@ -21,8 +55,8 @@ type People struct {
 }
 
 type Item struct {
-	Name  string  `json:"itemName"`
-	Price float64 `json:"price"`
+	Name  string   `json:"itemName"`
+	Price currency `json:"price"`
 }
 
 type SharedItems struct {
@@ -33,18 +67,18 @@ type SharedItems struct {
 }
 
 type Receipt struct {
-	Name        string          `json:"name"`
-	Items       []Item          `json: "items"`
-	SharedItems []Item          `json: "sharedItems"`
-	ItemSum     decimal.Decimal `json:"itemSum"`
-	Tax         decimal.Decimal `json:"tax"`
-	Tip         decimal.Decimal `json:"tip"`
-	Total       decimal.Decimal `json:"total"`
+	Name        string   `json:"name"`
+	Items       []Item   `json: "items"`
+	SharedItems []Item   `json: "sharedItems"`
+	ItemSum     currency `json:"itemSum"`
+	Tax         currency `json:"tax"`
+	Tip         currency `json:"tip"`
+	Total       currency `json:"total"`
 }
 
 type Result struct {
 	Receipt   map[string]Receipt
-	BillTotal decimal.Decimal
+	BillTotal currency
 	Data      Payload
 
 	// Required so that items are calculated accordingly
@@ -56,7 +90,7 @@ func (r *Result) processIndividual() {
 	for _, person := range r.Data.People {
 		for _, item := range person.Purchases {
 			receipt := r.Receipt[person.Name]
-			receipt.ItemSum = receipt.ItemSum.Add(decimal.NewFromFloat(item.Price))
+			receipt.ItemSum = receipt.ItemSum.Add(item.Price)
 			receipt.Items = append(receipt.Items, item)
 			r.Receipt[person.Name] = receipt
 		}
@@ -67,17 +101,16 @@ func (r *Result) processSplit() {
 	if len(r.Data.Shared) == 0 {
 		return
 	}
-
 	for _, group := range r.Data.Shared {
 		for _, item := range group.Purchases {
-			val := decimal.NewFromFloat(item.Price).Div(decimal.NewFromInt(int64(len(group.People))))
-			for _, people := range group.People {
+			splitPrice := item.Price.Split(len(group.People))
+			for i, people := range group.People {
 				receipt := r.Receipt[people.Name]
 				receipt.SharedItems = append(receipt.SharedItems, Item{
 					Name:  item.Name,
-					Price: val.InexactFloat64(),
+					Price: splitPrice[i],
 				})
-				receipt.ItemSum = receipt.ItemSum.Add(val)
+				receipt.ItemSum = receipt.ItemSum.Add(splitPrice[i])
 				r.Receipt[people.Name] = receipt
 			}
 		}
@@ -85,13 +118,14 @@ func (r *Result) processSplit() {
 	}
 }
 func (r *Result) calculatePercentages() {
-	total := decimal.NewFromFloat(0)
-	// calculate itemTotal
+	var total currency
 	for _, val := range r.Receipt {
 		total = total.Add(val.ItemSum)
 	}
-	r.taxPercentage = decimal.NewFromFloat(r.Data.TaxPaid).Div(total)
-	r.tipPercentage = decimal.NewFromFloat(r.Data.TipPaid).Div(total)
+	r.taxPercentage = decimal.NewFromFloat(float64(r.Data.TaxPaid)).
+		Div(decimal.NewFromFloat(float64(total)))
+	r.tipPercentage = decimal.NewFromFloat(float64(r.Data.TipPaid)).
+		Div(decimal.NewFromFloat(float64(total)))
 }
 
 func (r *Result) postProcess() {
@@ -115,7 +149,7 @@ func (r *Result) postProcess() {
 func (r *Result) Process() string {
 
 	r.Receipt = make(map[string]Receipt)
-	r.BillTotal = decimal.NewFromFloat(0.0)
+	r.BillTotal = 0
 
 	// pre process
 	r.processIndividual()
@@ -133,25 +167,22 @@ func (r *Result) Process() string {
 	return string(output)
 }
 
+func (c currency) MarshaJSON() ([]byte, error) {
+	return json.Marshal(c.Value().AsMajorUnits())
+}
+
 func (mapping *Result) MarshalJSON() ([]byte, error) {
 	decimal.MarshalJSONWithoutQuotes = true
 	buffer := bytes.NewBufferString("{\"people\":[")
 	length := len(mapping.Receipt)
 	count := 0
-	itemTotal := decimal.NewFromInt(0)
-	taxTotal := decimal.NewFromInt(0)
-	tipTotal := decimal.NewFromInt(0)
+	var itemTotal, taxTotal, tipTotal currency
 	for _, val := range mapping.Receipt {
 		taxTotal = taxTotal.Add(val.Tax)
 		tipTotal = tipTotal.Add(val.Tip)
 		itemTotal = itemTotal.Add(val.ItemSum)
 	}
 	for _, val := range mapping.Receipt {
-		val.ItemSum = val.ItemSum.Round(2)
-		val.Tax = val.Tax.Round(2)
-		val.Tip = val.Tip.Round(2)
-		val.Total = val.Total.Round(2)
-
 		jsonVal, _ := json.Marshal(val)
 		buffer.WriteString(string(jsonVal))
 		count++
@@ -159,14 +190,10 @@ func (mapping *Result) MarshalJSON() ([]byte, error) {
 			buffer.WriteString(",")
 		}
 	}
-	FinalItemTotal, _ := itemTotal.Round(2).Float64()
-	FinalTaxTotal, _ := taxTotal.Round(2).Float64()
-	FinalTipTotal, _ := tipTotal.Round(2).Float64()
-	FinalBillTotal, _ := mapping.BillTotal.Round(2).Float64()
 	buffer.WriteString("],")
-	buffer.WriteString(fmt.Sprintf("\"itemTotal\": %.2f,\n", FinalItemTotal))
-	buffer.WriteString(fmt.Sprintf("\"taxTotal\": %.2f,\n", FinalTaxTotal))
-	buffer.WriteString(fmt.Sprintf("\"tipTotal\": %.2f,\n", FinalTipTotal))
-	buffer.WriteString(fmt.Sprintf("\"billTotal\": %.2f}", FinalBillTotal))
+	buffer.WriteString(fmt.Sprintf("\"itemTotal\": %v,\n", itemTotal))
+	buffer.WriteString(fmt.Sprintf("\"taxTotal\": %v,\n", taxTotal))
+	buffer.WriteString(fmt.Sprintf("\"tipTotal\": %v,\n", tipTotal))
+	buffer.WriteString(fmt.Sprintf("\"billTotal\": %v}", mapping.BillTotal))
 	return buffer.Bytes(), nil
 }

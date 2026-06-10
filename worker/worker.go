@@ -23,6 +23,7 @@ func WorkerHandler(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, output)
+	fmt.Println(output)
 	fmt.Println("Processed bill split request")
 	return nil
 }
