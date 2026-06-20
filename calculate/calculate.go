@@ -68,8 +68,8 @@ type SharedItems struct {
 
 type Receipt struct {
 	Name        string   `json:"name"`
-	Items       []Item   `json: "items"`
-	SharedItems []Item   `json: "sharedItems"`
+	Items       []Item   `json:"items"`
+	SharedItems []Item   `json:"sharedItems"`
 	ItemSum     currency `json:"itemSum"`
 	Tax         currency `json:"tax"`
 	Tip         currency `json:"tip"`
