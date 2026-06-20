@@ -12,7 +12,6 @@ import (
 type currency int64
 
 func (c currency) Value() *money.Money {
-	fmt.Println(c)
 	return money.New(int64(c), money.USD)
 }
 
@@ -36,10 +35,9 @@ func (c currency) Split(n int) []currency {
 	return s
 }
 
-func (c currency) Mul(multiple decimal.Decimal) currency {
-	price := decimal.NewFromFloat(float64(c.Value().Amount()))
-	val := multiple.Mul(price).IntPart()
-	return currency(val)
+func (c currency) Mul(multiple int64) currency {
+	val := c.Value().Multiply(multiple)
+	return currency(val.Amount())
 }
 
 type Payload struct {
@@ -55,8 +53,10 @@ type People struct {
 }
 
 type Item struct {
-	Name  string   `json:"itemName"`
-	Price currency `json:"price"`
+	Name     string   `json:"itemName"`
+	Price    currency `json:"price"`
+	Quantity int64    `json:"quantity"`
+	Total    currency `json:"total"`
 }
 
 type SharedItems struct {
@@ -89,8 +89,9 @@ type Result struct {
 func (r *Result) processIndividual() {
 	for _, person := range r.Data.People {
 		for _, item := range person.Purchases {
+			item.Total = item.Price.Mul(item.Quantity)
 			receipt := r.Receipt[person.Name]
-			receipt.ItemSum = receipt.ItemSum.Add(item.Price)
+			receipt.ItemSum = receipt.ItemSum.Add(item.Total)
 			receipt.Items = append(receipt.Items, item)
 			r.Receipt[person.Name] = receipt
 		}
@@ -103,12 +104,16 @@ func (r *Result) processSplit() {
 	}
 	for _, group := range r.Data.Shared {
 		for _, item := range group.Purchases {
-			splitPrice := item.Price.Split(len(group.People))
+			item.Total = item.Price.Mul(item.Quantity)
+			splitPrice := item.Total.Split(len(group.People))
+			fmt.Println(splitPrice)
 			for i, people := range group.People {
 				receipt := r.Receipt[people.Name]
 				receipt.SharedItems = append(receipt.SharedItems, Item{
-					Name:  item.Name,
-					Price: splitPrice[i],
+					Name:     item.Name,
+					Price:    item.Price,
+					Quantity: item.Quantity,
+					Total:    splitPrice[i],
 				})
 				receipt.ItemSum = receipt.ItemSum.Add(splitPrice[i])
 				r.Receipt[people.Name] = receipt
@@ -117,31 +122,43 @@ func (r *Result) processSplit() {
 
 	}
 }
-func (r *Result) calculatePercentages() {
-	var total currency
-	for _, val := range r.Receipt {
-		total = total.Add(val.ItemSum)
-	}
-	r.taxPercentage = decimal.NewFromFloat(float64(r.Data.TaxPaid)).
-		Div(decimal.NewFromFloat(float64(total)))
-	r.tipPercentage = decimal.NewFromFloat(float64(r.Data.TipPaid)).
-		Div(decimal.NewFromFloat(float64(total)))
-}
 
 func (r *Result) postProcess() {
 	for key, val := range r.Receipt {
-		tax := val.ItemSum.Mul(r.taxPercentage)
-		tip := val.ItemSum.Mul(r.tipPercentage)
-
 		receipt := r.Receipt[key]
 		receipt.Name = key
+		receipt.ItemSum = val.ItemSum
+		r.Receipt[key] = receipt
+
+	}
+
+	shares := []Receipt{}
+	for _, val := range r.Receipt {
+		shares = append(shares, val)
+	}
+	// each index represents shares[i] item sum
+	itemSums := []int{}
+	for _, val := range shares {
+		itemSums = append(itemSums, int(val.ItemSum))
+	}
+	taxShares, err := r.Data.TaxPaid.Value().Allocate(itemSums...)
+	if err != nil {
+		panic(err.Error())
+	}
+	tipShares, err := r.Data.TipPaid.Value().Allocate(itemSums...)
+	if err != nil {
+		panic(err.Error())
+	}
+	for i, val := range shares {
+		tax := currency(taxShares[i].Amount())
+		tip := currency(tipShares[i].Amount())
+		receipt := r.Receipt[val.Name]
 		receipt.Tax = tax
 		receipt.Tip = tip
 		receipt.Total = tax.Add(tip).Add(receipt.ItemSum)
-		receipt.ItemSum = val.ItemSum
 
 		r.BillTotal = r.BillTotal.Add(receipt.Total)
-		r.Receipt[key] = receipt
+		r.Receipt[val.Name] = receipt
 
 	}
 }
@@ -156,7 +173,6 @@ func (r *Result) Process() string {
 	r.processSplit()
 
 	// post process
-	r.calculatePercentages()
 	r.postProcess()
 
 	output, err := json.MarshalIndent(r, "", "\t")
