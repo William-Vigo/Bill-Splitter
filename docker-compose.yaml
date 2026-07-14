@@ -9,6 +9,9 @@ services:
       - "8080:8080"
     networks:
       - proxy
+      - bill-splitter
 networks:
   proxy:
+    external: true
+  bill-splitter:
     external: true

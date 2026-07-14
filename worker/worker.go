@@ -14,7 +14,7 @@ func WorkerHandler(w http.ResponseWriter, r *http.Request) error {
 	var payload calculate.Payload
 	json.Unmarshal(body, &payload)
 
-	//TODO return err
+	// TODO return err
 	result := calculate.Result{
 		Data: payload,
 	}
