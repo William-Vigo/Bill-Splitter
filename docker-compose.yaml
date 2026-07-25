@@ -9,6 +9,7 @@ services:
       - "8080:8080"
     networks:
       - bill-splitter
+    restart: always
 networks:
   bill-splitter:
     external: true
